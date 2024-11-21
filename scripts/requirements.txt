@@ -1,0 +1,8 @@
+CairoSVG==2.7.1
+datasets==3.1.0
+pandas==1.5.3
+Pillow==9.5.0
+Pillow==11.0.0
+torch==2.2.0a0+81ea7a4
+tqdm==4.66.6
+transformers==4.46.1
