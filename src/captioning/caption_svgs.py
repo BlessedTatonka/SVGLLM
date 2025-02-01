@@ -20,6 +20,11 @@ def parse_args():
         description="Select a range from a large HF dataset, batch-process with Qwen2-VL-7B-Instruct, then optionally push to a private repo."
     )
     parser.add_argument(
+        "--dataset",
+        type=str,
+        help="Dataset for captioning. Should contain columns: 'svg_name' and 'svg_contents'."
+    )
+    parser.add_argument(
         "--start_index",
         type=int,
         default=0,
@@ -28,7 +33,7 @@ def parse_args():
     parser.add_argument(
         "--end_index",
         type=int,
-        default=1000,
+        default=-1,
         help="End index (exclusive) for the subset."
     )
     parser.add_argument(
@@ -50,16 +55,10 @@ def parse_args():
         help="If specified, push to this private HF dataset repo (e.g., 'username/my_repo')."
     )
     parser.add_argument(
-        "--hf_token",
-        type=str,
-        default=None,
-        help="Your Hugging Face token if pushing to a private repo."
-    )
-    parser.add_argument(
         "--model_path",
         type=str,
-        default="/hdd/Models/Qwen2-VL-7B-Instruct",
-        help="Local or HF path for Qwen2-VL-7B-Instruct model."
+        default="Qwen/Qwen2-VL-7B-Instruct",
+        help="Path for VL model."
     )
     parser.add_argument(
         "--output_csv",
@@ -83,7 +82,7 @@ def load_image_from_svg_content(svg_content, target_size=(256, 256)):
         image = Image.open(io.BytesIO(png_data))
         if image.mode == "RGBA":
             bg = Image.new("RGB", image.size, (255, 255, 255))
-            bg.paste(image, mask=image.split()[3])  # alpha channel
+            bg.paste(image, mask=image.split()[3])
             image = bg
         else:
             image = image.convert("RGB")
@@ -95,6 +94,7 @@ def load_image_from_svg_content(svg_content, target_size=(256, 256)):
 def main():
     args = parse_args()
 
+    dataset = args.dataset
     start_idx = args.start_index
     end_idx = args.end_index
     batch_size = args.batch_size
@@ -102,21 +102,17 @@ def main():
     model_path = args.model_path
 
     # ----------------------------------------------------------------------
-    # 1) (Optional) Hugging Face login if pushing to a private repo
-    # ----------------------------------------------------------------------
-    if args.hf_repo and args.hf_token:
-        login(token=args.hf_token)
-        logging.info(f"Logged into Hugging Face. Will push to {args.hf_repo}.")
-    elif args.hf_repo and not args.hf_token:
-        logging.warning("`--hf_repo` specified but no `--hf_token` provided. Push might fail.")
-
-    # ----------------------------------------------------------------------
     # 2) Load the entire dataset (non-streaming), then select a subset
     # ----------------------------------------------------------------------
-    logging.info("Loading the dataset 'TatonkaHF/SVGs_vz_processed_2.8M' in non-streaming mode...")
-    hf_dataset = load_dataset("TatonkaHF/SVGs_vz_processed_2.8M", split="train")
+
+    logging.info(f"Loading the dataset {dataset}.")
+    # hf_dataset = load_dataset("TatonkaHF/SVGs_vz_processed_2.8M", split="train")
+    hf_dataset = load_dataset(dataset, split="train")
     total_len = len(hf_dataset)
     logging.info(f"Original dataset size: {total_len}")
+
+    if end_idx == -1:
+        end_idx = total_len
 
     # Clip end_idx if it exceeds the dataset length
     end_idx = min(end_idx, total_len)
@@ -296,14 +292,12 @@ The caption should consist of:
     logging.info("Finished processing and writing captions to CSV.")
 
     # ----------------------------------------------------------------------
-    # 5) Optionally push to a private HF repo (the CSV file, not a dataset)
+    # 5) Optionally push to a HF repo.
     # ----------------------------------------------------------------------
     if args.hf_repo:
-        # If you still want to push your CSV to HF as part of your dataset repo,
-        # you could create the repo (if not exists) and upload the CSV file.
         logging.info(f"Creating/using the repo '{args.hf_repo}' to push CSV...")
-        #create_repo(args.hf_repo, repo_type="dataset", private=True, exist_ok=True)
-        #from huggingface_hub import HfApi
+        create_repo(args.hf_repo, repo_type="dataset", private=True, exist_ok=True)
+        
         api = HfApi()
         api.upload_file(
             path_or_fileobj=args.output_csv,
